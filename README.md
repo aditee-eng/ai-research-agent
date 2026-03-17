@@ -2,7 +2,7 @@
 
 An intelligent research agent that **searches the internet, analyses multiple sources, and generates a structured research report** on any topic — all from a single Python command.
 
-Built with **LangChain**, **OpenAI GPT-4o**, and **SerpAPI**.
+Built with **LangChain**, **Groq**, and **SerpAPI**.
 
 ---
 
