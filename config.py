@@ -3,6 +3,9 @@ config.py
 ---------
 Centralized configuration for the AI Research Agent.
 Loads environment variables and sets global settings.
+
+Now using Groq (free) instead of OpenAI for the LLM.
+SerpAPI is still used for web search.
 """
 
 import os
@@ -12,12 +15,13 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # ── API Keys ──────────────────────────────────────────────────────────────────
-OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
+GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
 SERPAPI_API_KEY: str = os.getenv("SERPAPI_API_KEY", "")
 
 # ── Model Settings ────────────────────────────────────────────────────────────
-# You can swap to "gpt-4o" for higher quality, or "gpt-3.5-turbo" for lower cost.
-OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gpt-4o")
+# Free Groq models: "llama3-70b-8192", "llama3-8b-8192", "mixtral-8x7b-32768"
+# llama3-70b-8192 is the most capable and still free.
+GROQ_MODEL: str = os.getenv("GROQ_MODEL", "llama3-70b-8192")
 
 # Maximum tokens the LLM may produce per call
 MAX_TOKENS: int = int(os.getenv("MAX_TOKENS", "2000"))
@@ -41,8 +45,8 @@ def validate_config() -> None:
     """
     missing: list[str] = []
 
-    if not OPENAI_API_KEY:
-        missing.append("OPENAI_API_KEY")
+    if not GROQ_API_KEY:
+        missing.append("GROQ_API_KEY")
     if not SERPAPI_API_KEY:
         missing.append("SERPAPI_API_KEY")
 
@@ -51,4 +55,5 @@ def validate_config() -> None:
             f"\n[Config Error] The following required environment variables are not set:\n"
             + "\n".join(f"  • {key}" for key in missing)
             + "\n\nCopy .env.example → .env and fill in your keys."
+            + "\n\nGet a FREE Groq key at: https://console.groq.com"
         )

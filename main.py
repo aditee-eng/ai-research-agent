@@ -23,7 +23,7 @@ def print_banner() -> None:
 ╔══════════════════════════════════════════════════════════╗
 ║          🔬  AI Research Assistant Agent  🔬             ║
 ║                                                          ║
-║  Powered by LangChain + OpenAI + SerpAPI                 ║
+║  Powered by LangChain + Groq + SerpAPI                 ║
 ║  Type a research topic and get a full report!            ║
 ╚══════════════════════════════════════════════════════════╝
 """

@@ -2,8 +2,8 @@
 tools.py
 --------
 Custom LangChain tools that the agent can invoke:
-  1. WebSearchTool   – searches the internet via SerpAPI
-  2. TextSummarizerTool – summarises a long block of text using the LLM
+  1. WebSearchTool      – searches the internet via SerpAPI
+  2. TextSummarizerTool – summarises a long block of text using Groq (free LLM)
 
 Each tool is a plain Python class that inherits from LangChain's BaseTool,
 which makes it easy for the agent to decide when and how to use each one.
@@ -15,7 +15,7 @@ from typing import Optional, Type
 
 from langchain.tools import BaseTool
 from langchain_community.utilities import SerpAPIWrapper
-from langchain_openai import ChatOpenAI
+from langchain_groq import ChatGroq          # ← Groq instead of OpenAI
 from langchain.schema import HumanMessage
 from pydantic import BaseModel, Field
 
@@ -96,7 +96,7 @@ class WebSearchTool(BaseTool):
 
 class TextSummarizerTool(BaseTool):
     """
-    Takes a long piece of text and uses the LLM to produce a concise summary.
+    Takes a long piece of text and uses Groq (free LLM) to produce a concise summary.
     Useful when the agent has gathered raw content from multiple sources.
     """
 
@@ -108,13 +108,14 @@ class TextSummarizerTool(BaseTool):
     args_schema: Type[BaseModel] = SummarizerInput
 
     def _run(self, text: str, context: str = "") -> str:
-        """Ask the LLM to summarise the provided text."""
+        """Ask Groq to summarise the provided text."""
         print(f"\n  📝 Summarising content" + (f" about '{context}'" if context else "") + "…")
 
-        llm = ChatOpenAI(
-            api_key=config.OPENAI_API_KEY,
-            model=config.OPENAI_MODEL,
-            temperature=0.2,          # low temperature → more factual summaries
+        # Using Groq — completely free, no billing needed
+        llm = ChatGroq(
+            api_key=config.GROQ_API_KEY,
+            model=config.GROQ_MODEL,
+            temperature=0.2,    # low temperature → more factual summaries
             max_tokens=800,
         )
 
@@ -123,7 +124,7 @@ class TextSummarizerTool(BaseTool):
             f"{'Topic: ' + context + chr(10) if context else ''}"
             f"Summarise the following text in 3-5 clear bullet points. "
             f"Focus on the most important facts, findings, and insights.\n\n"
-            f"Text to summarise:\n{text[:4000]}"   # cap at 4 000 chars to stay within token limits
+            f"Text to summarise:\n{text[:4000]}"  # cap at 4000 chars to stay within token limits
         )
 
         response = llm.invoke([HumanMessage(content=prompt)])

@@ -1,11 +1,11 @@
 # ── Core AI / LangChain stack ─────────────────────────────────────────────────
 langchain==0.2.16
-langchain-openai==0.1.25
+langchain-groq==0.1.9
 langchain-community==0.2.16
 langchain-core==0.2.38
 
-# ── OpenAI SDK (used internally by langchain-openai) ─────────────────────────
-openai==1.45.0
+# ── Groq SDK (used internally by langchain-groq) ──────────────────────────────
+groq==0.9.0
 
 # ── Web search ────────────────────────────────────────────────────────────────
 google-search-results==2.4.2     # SerpAPI Python client
@@ -13,8 +13,8 @@ google-search-results==2.4.2     # SerpAPI Python client
 # ── Environment variable management ──────────────────────────────────────────
 python-dotenv==1.0.1
 
-# ── HTTP requests (required by several LangChain integrations) ────────────────
+# ── HTTP requests ────────────────────────────────────────────────────────────
 requests==2.32.3
 
-# ── Data validation (used by LangChain tool schemas) ─────────────────────────
+# ── Data validation ───────────────────────────────────────────────────────────
 pydantic==2.8.2

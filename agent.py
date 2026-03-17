@@ -1,182 +1,121 @@
-"""
-agent.py
---------
-Defines the ResearchAgent class.
-
-The agent is built on LangChain's OpenAI Functions agent, which lets the LLM
-decide *which* tool to call and *when*, based on the user's research topic.
-
-Workflow:
-  1. User provides a research topic.
-  2. Agent searches the web (multiple queries if needed).
-  3. Agent summarises gathered content.
-  4. Agent generates a structured Markdown research report.
-  5. Report is returned as a string AND saved to disk.
-"""
-
 from __future__ import annotations
-
-import os
 import re
 from datetime import datetime
 from pathlib import Path
-
-from langchain.agents import AgentExecutor, create_openai_functions_agent
-from langchain_openai import ChatOpenAI
-from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain.schema import SystemMessage
-
+from langchain_groq import ChatGroq
+from langchain_community.utilities import SerpAPIWrapper
+from langchain_core.messages import HumanMessage, SystemMessage
 import config
-from tools import get_tools
 
+SYSTEM_PROMPT = """You are an expert AI Research Assistant.
+Your job:
+1. Research the given topic using web searches (do at least 3 searches)
+2. Analyse the results
+3. Write a structured Markdown research report
 
-# ── System prompt ─────────────────────────────────────────────────────────────
-# This instructs the LLM on its role and how to produce the final report.
+When you need to search, respond EXACTLY like this (nothing else):
+SEARCH: your search query here
 
-SYSTEM_PROMPT = """You are an expert AI Research Assistant. Your job is to:
+When you have enough information, respond with the full report starting with:
+FINAL REPORT:
 
-1. Conduct thorough internet research on the topic provided by the user.
-2. Search for information using multiple different search queries to cover the topic from different angles.
-3. Summarise the collected information clearly and concisely.
-4. Produce a well-structured research report in Markdown format.
-
-When writing the final research report, use this structure:
-
+The report must follow this structure:
 # Research Report: [Topic]
-
 ## Executive Summary
-A 2-3 sentence overview of the most important findings.
-
 ## Key Findings
-Bullet-point list of the most important facts and insights.
-
 ## Detailed Analysis
-### [Sub-topic 1]
-...
-### [Sub-topic 2]
-...
-
 ## Conclusions
-What can we conclude from this research?
-
 ## Sources
-Numbered list of URLs used during research.
 
----
-
-Guidelines:
-- Be factual and objective.
-- Use clear, simple language suitable for a general audience.
-- Always include sources at the end.
-- If you find conflicting information, mention both viewpoints.
-- Conduct at least 3 different searches to ensure comprehensive coverage.
+Rules:
+- Do at least 3 searches before writing the report
+- Be factual and objective
+- Always include sources
 """
 
-
 class ResearchAgent:
-    """
-    Wraps LangChain's OpenAI Functions agent with research-specific tools
-    and a structured report-generation workflow.
-    """
-
     def __init__(self) -> None:
-        # Validate that API keys are present before doing anything
         config.validate_config()
-
-        # ── LLM ───────────────────────────────────────────────────────────────
-        self.llm = ChatOpenAI(
-            api_key=config.OPENAI_API_KEY,
-            model=config.OPENAI_MODEL,
+        self.llm = ChatGroq(
+            api_key=config.GROQ_API_KEY,
+            model=config.GROQ_MODEL,
             temperature=config.TEMPERATURE,
             max_tokens=config.MAX_TOKENS,
         )
-
-        # ── Tools the agent may use ───────────────────────────────────────────
-        self.tools = get_tools()
-
-        # ── Prompt template ───────────────────────────────────────────────────
-        # MessagesPlaceholder("agent_scratchpad") is required by LangChain's
-        # OpenAI Functions agent to store intermediate reasoning steps.
-        self.prompt = ChatPromptTemplate.from_messages([
-            SystemMessage(content=SYSTEM_PROMPT),
-            ("human", "{input}"),
-            MessagesPlaceholder(variable_name="agent_scratchpad"),
-        ])
-
-        # ── Build the agent ───────────────────────────────────────────────────
-        agent = create_openai_functions_agent(
-            llm=self.llm,
-            tools=self.tools,
-            prompt=self.prompt,
+        self.search = SerpAPIWrapper(
+            serpapi_api_key=config.SERPAPI_API_KEY,
+            params={"num": config.NUM_SEARCH_RESULTS},
         )
-
-        # AgentExecutor runs the agent in a loop until it produces a final answer
-        self.executor = AgentExecutor(
-            agent=agent,
-            tools=self.tools,
-            verbose=True,           # prints each step so users can follow along
-            max_iterations=10,      # safety cap: never loop more than 10 times
-            handle_parsing_errors=True,
-        )
-
-        # Ensure the reports output directory exists
         Path(config.REPORTS_DIR).mkdir(parents=True, exist_ok=True)
 
-    # ── Public API ─────────────────────────────────────────────────────────────
-
     def research(self, topic: str) -> dict[str, str]:
-        """
-        Run a full research session on *topic*.
-
-        Returns a dict with:
-          - "report"    : the full Markdown report string
-          - "saved_path": absolute path to the saved .md file
-        """
         print(f"\n{'='*60}")
-        print(f"  🤖 Starting research on: {topic}")
+        print(f"  🤖 Researching: {topic}")
+        print(f"  🆓 Using Groq — model: {config.GROQ_MODEL}")
         print(f"{'='*60}\n")
 
-        # Build the user message that kicks off the agent
-        user_message = (
-            f"Please research the following topic thoroughly and produce a "
-            f"comprehensive, structured research report:\n\n**Topic:** {topic}\n\n"
-            f"Make sure to:\n"
-            f"- Search for information using at least 3 different queries\n"
-            f"- Cover multiple aspects of the topic\n"
-            f"- Include recent and relevant sources\n"
-            f"- Format the final output as a complete Markdown research report"
-        )
+        messages = [
+            SystemMessage(content=SYSTEM_PROMPT),
+            HumanMessage(content=(
+                f"Research this topic and write a comprehensive report:\n\n"
+                f"Topic: {topic}\n\n"
+                f"Start by searching for information. Do at least 3 searches."
+            )),
+        ]
 
-        # Invoke the agent — it will loop, calling tools as needed
-        result = self.executor.invoke({"input": user_message})
+        search_count = 0
+        organic = []
 
-        report: str = result.get("output", "No report generated.")
+        for i in range(12):
+            response = self.llm.invoke(messages)
+            reply = response.content.strip()
 
-        # Save the report to disk
-        saved_path = self._save_report(topic, report)
+            if reply.upper().startswith("SEARCH:"):
+                query = reply[7:].strip()
+                print(f"  🔍 Search {search_count + 1}: {query}")
+                try:
+                    raw = self.search.results(query)
+                    organic = raw.get("organic_results", [])
+                    results_text = self._format_results(organic)
+                except Exception as exc:
+                    results_text = f"Search failed: {exc}"
+                search_count += 1
+                messages.append(response)
+                messages.append(HumanMessage(content=(
+                    f"Search results for '{query}':\n\n{results_text}\n\n"
+                    f"You have done {search_count} search(es) so far. "
+                    f"{'Do more searches or write FINAL REPORT: when ready.' if search_count < 3 else 'You can now write the FINAL REPORT:'}"
+                )))
 
-        print(f"\n{'='*60}")
-        print(f"  ✅ Research complete!")
-        print(f"  📄 Report saved to: {saved_path}")
-        print(f"{'='*60}\n")
+            elif "FINAL REPORT:" in reply.upper():
+                idx = reply.upper().find("FINAL REPORT:")
+                report = reply[idx + len("FINAL REPORT:"):].strip()
+                saved_path = self._save_report(topic, report)
+                print(f"\n  ✅ Done! Report saved to: {saved_path}\n")
+                return {"report": report, "saved_path": saved_path}
 
-        return {"report": report, "saved_path": saved_path}
+            else:
+                messages.append(response)
+                messages.append(HumanMessage(content=(
+                    "Please either search with: SEARCH: your query\n"
+                    "Or write the report starting with: FINAL REPORT:"
+                )))
 
-    # ── Private helpers ────────────────────────────────────────────────────────
+        report = "Research incomplete. Please try again."
+        return {"report": report, "saved_path": self._save_report(topic, report)}
+
+    def _format_results(self, organic: list) -> str:
+        if not organic:
+            return "No results found."
+        lines = []
+        for i, r in enumerate(organic[:config.NUM_SEARCH_RESULTS], 1):
+            lines.append(f"Result {i}:\n  Title: {r.get('title','N/A')}\n  URL: {r.get('link','N/A')}\n  Snippet: {r.get('snippet','N/A')}\n")
+        return "\n".join(lines)
 
     def _save_report(self, topic: str, report: str) -> str:
-        """
-        Write the report to a .md file in the reports directory.
-        The filename is derived from the topic and the current timestamp
-        so that multiple reports on the same topic don't overwrite each other.
-        """
-        # Turn the topic into a safe filename fragment
         safe_topic = re.sub(r"[^a-zA-Z0-9]+", "_", topic).strip("_").lower()
-        timestamp  = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename   = f"{safe_topic}_{timestamp}.md"
-        filepath   = Path(config.REPORTS_DIR) / filename
-
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filepath = Path(config.REPORTS_DIR) / f"{safe_topic}_{timestamp}.md"
         with open(filepath, "w", encoding="utf-8") as f:
             f.write(report)
-
         return str(filepath.resolve())
